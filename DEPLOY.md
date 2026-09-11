@@ -34,8 +34,9 @@ in your shell history either way. `freesound token` exists for the same reason
 read it back with `grep '^FREESOUND_WRITE_TOKEN=' .env` when you need it.
 
 There is no build step (`npm run build` does not exist and `deploy` skips it),
-and no dependencies at all, so `npm ci` is a no-op that only validates the
-lockfile.
+and one dependency (`@anthropic-ai/sdk`, pure JS), so `npm ci` is quick and
+needs no native toolchain — nothing here is rebuilt against the droplet's Node
+ABI.
 
 `provision-site` stops before build/run on purpose — each site is deployed its
 own way afterward. Here that way is `freesound deploy`: it sees that nothing
