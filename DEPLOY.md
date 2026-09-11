@@ -9,7 +9,7 @@ with the app dir at `/var/www/freesound`.
 ## One-time bring-up (on the droplet, as root)
 
 ```bash
-provision-site freesound ivjames/freesound --port 8074
+provision-site freesound ivjames/freesound --port <confirmed-port>   # see below
 cd /var/www/freesound
 ln -sf /var/www/freesound/bin/freesound /usr/local/bin/freesound
 $EDITOR .env                          # provision-site seeded PORT; add FREESOUND_API_KEY
@@ -56,9 +56,14 @@ Two details in that first line matter more than they look:
   that looks like the app is down while it runs perfectly on the wrong port.
   **But confirm the port first**: `provision-site` only scans for a free one
   (`ss -ltn` plus every `127.0.0.1:<port>` in `sites-available`) when `--port`
-  is *omitted*. An explicit `--port 8074` goes into the vhost unchecked, so if
-  anything already listens on 8074, nginx routes `freesound.lab980.com` at that
-  service while this app fails to bind — two failures wearing one 502.
+  is *omitted*. An explicit `--port 8074` goes into the vhost unchecked.
+
+  The symptom then is usually not an error. If another HTTP app already holds
+  8074, nginx connects to it perfectly well and **serves that site under
+  `freesound.lab980.com`** — a 200 from the wrong application, while this app
+  separately fails to bind. Everything looks up: DNS resolves, TLS is valid,
+  the page loads, `health-check` calls it healthy. A 502 is the kinder outcome
+  and only happens when whatever holds the port is not a usable HTTP upstream.
 
   8074 is this repo's default but has never been confirmed against the droplet;
   `.claude/sites.json` in `ivjames/lab980.com` records the port as `null`, in
