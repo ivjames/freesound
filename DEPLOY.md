@@ -49,11 +49,28 @@ otherwise it warns and leaves the previous dump alone.
 
 Two details in that first line matter more than they look:
 
-- **`--port 8074` is not optional.** Without it `provision-site` picks the
-  next free port from 8060 and writes *that* into the vhost, while this repo's
-  CLI, `.env` and app config all use `8074`. nginx then proxies to a port
-  nothing is listening on and every request is a 502 that looks like the app is
-  down while it runs perfectly on the wrong port.
+- **`--port` is not optional, and it is not checked.** Without it
+  `provision-site` picks the next free port from 8060 and writes *that* into
+  the vhost, while this repo's CLI, `.env` and app config all use `8074`. nginx
+  then proxies to a port nothing is listening on and every request is a 502
+  that looks like the app is down while it runs perfectly on the wrong port.
+  **But confirm the port first**: `provision-site` only scans for a free one
+  (`ss -ltn` plus every `127.0.0.1:<port>` in `sites-available`) when `--port`
+  is *omitted*. An explicit `--port 8074` goes into the vhost unchecked, so if
+  anything already listens on 8074, nginx routes `freesound.lab980.com` at that
+  service while this app fails to bind — two failures wearing one 502.
+
+  8074 is this repo's default but has never been confirmed against the droplet;
+  `.claude/sites.json` in `ivjames/lab980.com` records the port as `null`, in
+  `unverified`, for exactly that reason. Check first:
+
+  ```bash
+  ss -ltn | grep ':8074' ; grep -rn '127.0.0.1:8074' /etc/nginx/sites-available
+  ```
+
+  Both silent means it is free. If it is taken, pick a free one and change it
+  in all three places that have to agree: `--port`, `FREESOUND_PORT` at the top
+  of `bin/freesound`, and `PORT=` in `.env`.
 - **`provision-site` seeds `.env` with `PORT=` itself** (only if there isn't one
   already, mode 600). Add the remaining keys to that file — don't `cp` over it,
   or the port goes back out of sync.
