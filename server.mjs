@@ -64,6 +64,11 @@ const translator = new Translator(
 // to Freesound, so this is a spend ceiling rather than a technical limit.
 const SIMILAR_SCAN_MAX = 24;
 
+// How long a search may wait on translation before giving up and showing the
+// original titles. Search is the user-facing latency here; translation is a
+// nicety layered on it and must never be the reason a search feels broken.
+const SEARCH_TRANSLATE_BUDGET_MS = 8000;
+
 // Two buckets. Search is the expensive one — it is a request to Freesound
 // every time — so it is the tighter of the two; board edits only touch local
 // disk, apart from the one lookup a new pad makes.
@@ -79,12 +84,17 @@ const writeToken = () => env.get('FREESOUND_WRITE_TOKEN');
  * which is the documented open mode rather than an accident — /api/health says
  * so out loud so it cannot be mistaken for protection that is working.
  */
-function requireToken(req, url) {
+function requireToken(req) {
   const expected = writeToken();
   if (!expected) return;
+  // Header only. A query parameter would put the shared secret into nginx's
+  // access log, the browser's history and any Referer this page sends — which
+  // is the same rule lib/freesound.mjs applies to the Freesound key, and it
+  // would be odd to state it there and break it here. Nothing in the frontend
+  // ever needed the query form.
   const header = req.headers['x-board-token'];
   const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '')?.[1];
-  const supplied = (typeof header === 'string' && header) || bearer || url.searchParams.get('token') || '';
+  const supplied = (typeof header === 'string' && header) || bearer || '';
   if (!secretEquals(supplied, expected)) {
     throw new HttpError(supplied ? 'That token is not valid' : 'This action needs the board token', 401);
   }
@@ -125,7 +135,7 @@ async function health() {
 }
 
 async function doSearch(req, url) {
-  requireToken(req, url);
+  requireToken(req);
   limit(searchLimit, req, 'searches');
   if (!apiKey()) {
     throw new HttpError('No Freesound API key is configured on this install — see DEPLOY.md', 503);
@@ -168,9 +178,17 @@ async function doSearch(req, url) {
   // Translate the page in one batched call before grouping, so that clustering
   // compares the names the user will actually read. Failures here are silent by
   // design — `translate` returns what it has and the originals stand in.
+  //
+  // The budget is what makes "an enhancement, never a dependency" true in
+  // practice rather than only in the comment: without it a slow Anthropic API
+  // would hold a Freesound search open for the SDK's full timeout-times-retries
+  // and the user would experience translation as search being broken.
   let translated = 0;
   if (wantsTranslation(url) && translator.available) {
-    const map = await translator.translate(results.map((r) => ({ id: r.id, name: r.name })));
+    const map = await translator.translate(
+      results.map((r) => ({ id: r.id, name: r.name })),
+      { budgetMs: SEARCH_TRANSLATE_BUDGET_MS },
+    );
     applyTranslations(results, map);
     translated = results.filter((r) => r.nameEn).length;
   }
@@ -192,7 +210,7 @@ async function doSearch(req, url) {
 }
 
 async function addPad(req, url, boardId) {
-  requireToken(req, url);
+  requireToken(req);
   limit(writeLimit, req, 'edits');
   const body = await readJsonBody(req);
   const soundId = Number(body.soundId);
@@ -263,7 +281,7 @@ async function addPad(req, url, boardId) {
  * transitive, which is why the clustering is a graph walk rather than a sort.
  */
 async function similarScan(req, url, boardId) {
-  requireToken(req, url);
+  requireToken(req);
   limit(searchLimit, req, 'similarity scans');
   if (!apiKey()) throw new HttpError('No Freesound API key is configured on this install', 503);
 
@@ -320,6 +338,10 @@ async function serveAudio(req, res, soundId) {
 
   open.stream.destroy();
   const partial = await cache.open(soundId, { start: range.start, end: range.end });
+  // The file can be swept between the two opens. The unranged path above checks
+  // for that; this one has to as well, or an ordinary seek during a cache sweep
+  // becomes a 500 instead of the 404 it should be.
+  if (!partial) throw new HttpError('That sound is not on any board here', 404);
   res.writeHead(206, {
     ...common,
     'Content-Length': range.end - range.start + 1,
@@ -359,7 +381,7 @@ async function route(req, res, url) {
   if (pathname === '/api/boards') {
     if (method === 'GET') return sendJson(res, 200, { boards: await store.list() });
     if (method === 'POST') {
-      requireToken(req, url);
+      requireToken(req);
       limit(writeLimit, req, 'edits');
       const body = await readJsonBody(req);
       return sendJson(res, 201, await store.create({ name: body.name }));
@@ -379,12 +401,12 @@ async function route(req, res, url) {
   if (board) {
     if (method === 'GET') return sendJson(res, 200, await store.read(board[1]));
     if (method === 'PATCH') {
-      requireToken(req, url);
+      requireToken(req);
       limit(writeLimit, req, 'edits');
       return sendJson(res, 200, await store.update(board[1], await readJsonBody(req)));
     }
     if (method === 'DELETE') {
-      requireToken(req, url);
+      requireToken(req);
       limit(writeLimit, req, 'edits');
       return sendJson(res, 200, await store.remove(board[1]));
     }
@@ -396,12 +418,12 @@ async function route(req, res, url) {
   const pad = PAD_PATH.exec(pathname);
   if (pad) {
     if (method === 'PATCH') {
-      requireToken(req, url);
+      requireToken(req);
       limit(writeLimit, req, 'edits');
       return sendJson(res, 200, await store.updatePad(pad[1], pad[2], await readJsonBody(req)));
     }
     if (method === 'DELETE') {
-      requireToken(req, url);
+      requireToken(req);
       limit(writeLimit, req, 'edits');
       return sendJson(res, 200, await store.removePad(pad[1], pad[2]));
     }

@@ -484,7 +484,13 @@ function addButton(sound) {
 async function addSound(sound, button, { allowDuplicate = false } = {}) {
   try {
     const result = await guard(() => api.addPad(state.board.id, { soundId: sound.id, allowDuplicate }));
-    if (!result) return; // token prompt raised; leave the button ready to retry
+    if (!result) {
+      // guard() swallowed a 401 and raised the token prompt. The `finally` below
+      // re-enables the button, so its label has to go back too — otherwise it
+      // sits there enabled and reading "adding…" forever.
+      button.textContent = 'add';
+      return;
+    }
     button.textContent = 'added';
     await openBoard(state.board.id);
     await refreshBoards(state.board.id);

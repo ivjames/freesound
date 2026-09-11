@@ -91,10 +91,15 @@ export async function play(pad, url, { onEnded } = {}) {
 
   source.onended = () => {
     voices.delete(source);
-    if (voices.size === 0) {
-      playing.delete(pad.id);
-      onEnded?.();
-    }
+    if (voices.size > 0) return;
+    // Only clear the map entry if it is still OUR set. stop() deletes the entry
+    // outright, so a pad stopped and immediately retriggered (keyboard
+    // auto-repeat does this) has a fresh Set here while the old voices' onended
+    // callbacks are still queued. Deleting unconditionally would drop the NEW
+    // set, leaving its voices unreachable by stop() and stopAll() — a looping
+    // pad that plays until the tab is closed.
+    if (playing.get(pad.id) === voices) playing.delete(pad.id);
+    onEnded?.();
   };
   source.start();
 }
