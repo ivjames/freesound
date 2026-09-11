@@ -82,7 +82,17 @@ Two details in that first line matter more than they look:
   ss -ltn | grep ':8074' ; grep -rn '127.0.0.1:8074' /etc/nginx/sites-available
   ```
 
-  Both silent means it is free.
+  Both silent means it is free. If either printed something, see **If the port
+  is taken** below before you run anything else.
+
+- **`provision-site` seeds `.env` with `PORT=` itself** (only if there isn't one
+  already, mode 600). Add the remaining keys to that file — don't `cp` over it,
+  or the port goes back out of sync.
+
+Reboot survival needs the pm2 boot hook installed **once per droplet**
+(`pm2 startup systemd -u root --hp /root`, then run the line it prints; verify
+`systemctl is-enabled pm2-root` → enabled). `pm2 save` alone only writes the
+dump — nothing replays it at boot without the hook.
 
 ### If the port is taken
 
@@ -119,14 +129,18 @@ FREESOUND_PORT=<port> freesound status     # and restart, and logs, every time
 Forget it once and the CLI restarts the app on 8074 behind a vhost pointing
 somewhere else. Landing it in the repo is the only version of this that stays
 fixed.
-- **`provision-site` seeds `.env` with `PORT=` itself** (only if there isn't one
-  already, mode 600). Add the remaining keys to that file — don't `cp` over it,
-  or the port goes back out of sync.
 
-Reboot survival needs the pm2 boot hook installed **once per droplet**
-(`pm2 startup systemd -u root --hp /root`, then run the line it prints; verify
-`systemctl is-enabled pm2-root` → enabled). `pm2 save` alone only writes the
-dump — nothing replays it at boot without the hook.
+Then, **in the shell you will provision from**, set and re-check the
+replacement — `$PORT` is still 8074 from step 0, and the bring-up block uses
+`"$PORT"`, so skipping this quietly provisions the port you just rejected. A
+replacement can be occupied too, so it gets the same two checks:
+
+```bash
+PORT=<chosen-port>
+ss -ltn | grep ":$PORT"
+grep -rn "127.0.0.1:$PORT" /etc/nginx/sites-available
+# both silent → go back to the bring-up block; it reads "$PORT"
+```
 
 ### `.env` keys
 
