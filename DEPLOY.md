@@ -9,7 +9,16 @@ with the app dir at `/var/www/freesound`.
 ## One-time bring-up (on the droplet, as root)
 
 ```bash
-provision-site freesound ivjames/freesound --port <confirmed-port>   # see below
+# 0. Confirm the port is free FIRST. provision-site does not check an explicit
+#    --port, so this is the only thing standing between you and a vhost that
+#    serves somebody else's site. Both commands silent = free.
+PORT=8074
+ss -ltn | grep ":$PORT"
+grep -rn "127.0.0.1:$PORT" /etc/nginx/sites-available
+#    Either one printed something? Stop and read "If the port is taken" below —
+#    the fix is a repo change, not an edit on the box.
+
+provision-site freesound ivjames/freesound --port "$PORT"
 cd /var/www/freesound
 ln -sf /var/www/freesound/bin/freesound /usr/local/bin/freesound
 $EDITOR .env                          # provision-site seeded PORT; add FREESOUND_API_KEY
@@ -73,9 +82,43 @@ Two details in that first line matter more than they look:
   ss -ltn | grep ':8074' ; grep -rn '127.0.0.1:8074' /etc/nginx/sites-available
   ```
 
-  Both silent means it is free. If it is taken, pick a free one and change it
-  in all three places that have to agree: `--port`, `FREESOUND_PORT` at the top
-  of `bin/freesound`, and `PORT=` in `.env`.
+  Both silent means it is free.
+
+### If the port is taken
+
+Do **not** fix this on the droplet. The port's home is `FREESOUND_PORT` at the
+top of `bin/freesound`, which is a **tracked file**, and two mechanisms
+conspire to undo a local edit:
+
+- `freesound deploy` runs `git reset --hard origin/$BRANCH` before it starts
+  anything, so an edited `bin/freesound` is destroyed in the same command that
+  was supposed to use it.
+- Editing `.env` instead does not help either. The CLI hands pm2
+  `PORT="${FREESOUND_PORT:-8074}"` from the restored file, and `lib/env.mjs`
+  gives `process.env` precedence over `.env` — so the CLI's 8074 wins over
+  whatever `.env` says, and the app binds 8074 while the vhost points at your
+  chosen port.
+
+So the order is: **land the new default in the repo first**, then provision.
+
+```bash
+# in a clone, not on the droplet
+sed -i 's/FREESOUND_PORT:-8074/FREESOUND_PORT:-<port>/' bin/freesound
+#   ...also update DEPLOY.md and .env.example, then PR and merge it
+```
+
+If you genuinely must bring the site up before that lands, `FREESOUND_PORT` is
+a documented override — but it is per-invocation, not persistent, and it has
+to be on **every** call:
+
+```bash
+FREESOUND_PORT=<port> freesound deploy
+FREESOUND_PORT=<port> freesound status     # and restart, and logs, every time
+```
+
+Forget it once and the CLI restarts the app on 8074 behind a vhost pointing
+somewhere else. Landing it in the repo is the only version of this that stays
+fixed.
 - **`provision-site` seeds `.env` with `PORT=` itself** (only if there isn't one
   already, mode 600). Add the remaining keys to that file — don't `cp` over it,
   or the port goes back out of sync.
