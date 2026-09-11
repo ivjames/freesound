@@ -1,0 +1,12 @@
+# Runtime state — lives in the app dir on the droplet, never in git.
+.env
+data/
+
+node_modules/
+npm-debug.log*
+*.tmp-*
+
+# Keep the conventions file: git will not descend into a directory excluded
+# as `.claude/`, so the negation has to sit under `.claude/*`.
+.claude/*
+!.claude/rules/

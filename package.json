@@ -1,0 +1,14 @@
+{
+  "name": "freesound-boards",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build custom sound boards from Freesound's CC-licensed library, with per-clip attribution.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "license": "MIT"
+}

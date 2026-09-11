@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freesound Boards</title>
+<meta name="description" content="Build custom sound boards from Freesound's Creative Commons library, with the attribution every clip is owed.">
+<link rel="stylesheet" href="/css/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>%F0%9F%94%8A</text></svg>">
+</head>
+<body>
+<header class="bar">
+  <h1>Freesound<span>Boards</span></h1>
+  <div class="bar-controls">
+    <select id="board-picker" aria-label="Board"></select>
+    <button id="new-board" class="ghost" type="button">New board</button>
+    <button id="toggle-search" class="accent" type="button" aria-expanded="false">Add sounds</button>
+    <button id="toggle-credits" class="ghost" type="button" aria-expanded="false">Credits</button>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<main>
+  <section id="board" class="board" aria-label="Sound pads">
+    <p class="empty" id="board-empty">No board yet. Make one, then add sounds to it.</p>
+    <div id="pads" class="pads"></div>
+  </section>
+
+  <aside id="search" class="panel" hidden aria-label="Search Freesound">
+    <form id="search-form" class="search-form">
+      <input id="q" type="search" placeholder="airhorn, rain on a window, 808 kick…" autocomplete="off" aria-label="Search Freesound">
+      <button type="submit" class="accent">Search</button>
+    </form>
+    <div class="search-opts">
+      <label><input type="checkbox" id="commercial-only"> Commercial-safe only <span class="hint">(exclude NonCommercial)</span></label>
+      <label>Max length <input type="number" id="max-duration" min="1" max="300" value="15" size="3"> s</label>
+    </div>
+    <p class="hint" id="search-status">Results play on click. <strong>Add</strong> copies the clip and its credit onto the current board.</p>
+    <ol id="results" class="results"></ol>
+    <button id="more" class="ghost wide" type="button" hidden>Load more</button>
+  </aside>
+
+  <aside id="credits" class="panel" hidden aria-label="Credits">
+    <h2>Credits</h2>
+    <p class="hint">Freesound clips are Creative Commons. <strong>CC BY</strong> is a conditional grant — you may use the
+      sound if you credit it. This is that credit, in the form you can paste.</p>
+    <div id="credits-summary"></div>
+    <ol id="credits-list" class="credits-list"></ol>
+    <div class="credits-actions">
+      <a id="dl-md" class="ghost" download>Markdown</a>
+      <a id="dl-txt" class="ghost" download>Plain text</a>
+      <a id="dl-html" class="ghost" download>HTML</a>
+      <a id="dl-json" class="ghost" download>JSON</a>
+    </div>
+  </aside>
+</main>
+
+<footer class="foot">
+  <p>Sounds from <a href="https://freesound.org" rel="noopener">freesound.org</a>, used under the licence each uploader
+     chose. This site stores a cached mp3 preview and the clip's credit; it does not redistribute originals.</p>
+  <p id="health" class="hint"></p>
+</footer>
+
+<dialog id="token-dialog">
+  <form method="dialog">
+    <h2>Board token</h2>
+    <p class="hint">This install protects editing and searching with a shared token
+      (<code>FREESOUND_WRITE_TOKEN</code> in its <code>.env</code>). Playing a board never needs one.</p>
+    <input id="token-input" type="password" autocomplete="off" placeholder="token">
+    <menu>
+      <button value="cancel" class="ghost">Cancel</button>
+      <button id="token-save" value="save" class="accent">Save</button>
+    </menu>
+  </form>
+</dialog>
+
+<script type="module" src="/js/app.mjs"></script>
+</body>
+</html>
