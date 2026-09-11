@@ -6,7 +6,7 @@ import { after, describe, it } from 'node:test';
 
 import { parseEnv } from '../lib/env.mjs';
 import { isFreesoundUrl, licenseInfo, previewUrl, toSound } from '../lib/freesound.mjs';
-import { parseRange, secretEquals } from '../lib/http.mjs';
+import { clientIp, parseRange, secretEquals } from '../lib/http.mjs';
 import { BoardStore, StoreError, normaliseColor } from '../lib/store.mjs';
 import { creditsFor, creditsMarkdown, creditsText } from '../lib/credits.mjs';
 
@@ -270,5 +270,88 @@ describe('credits', () => {
       creditsFor({ ...board, pads: [{ label: 'x', sound: toSound(rawSound({ name: '[click] *bang*' })) }] }),
     );
     assert.match(md, /\\\[click\\\]/);
+  });
+});
+
+// --- regressions from the adversarial review -------------------------------
+
+describe('a pad patch cannot rewrite its attribution', () => {
+  it('ignores a `sound` block in a PATCH body', async () => {
+    // This was a real hole: normalisePad read `input.sound ?? existing.sound`,
+    // so any client could PATCH a pad and replace the author, title, licence
+    // and source URL — i.e. author its own attribution — and slip a
+    // `javascript:` URL into the credit link that both the exported Markdown
+    // and the rendered page turn into an anchor.
+    const store = new BoardStore(tmpData());
+    const board = await store.create({ name: 'b' });
+    const pad = await store.addPad(board.id, { sound: toSound(rawSound()) });
+
+    const patched = await store.updatePad(board.id, pad.id, {
+      label: 'renamed',
+      sound: {
+        id: 1234,
+        name: 'TOTALLY MINE',
+        username: 'attacker',
+        license: 'Creative Commons 0',
+        url: 'javascript:alert(1)',
+        previewUrl: 'https://evil.example/x.mp3',
+      },
+    });
+
+    assert.equal(patched.label, 'renamed', 'the fields a client may set still apply');
+    assert.equal(patched.sound.username, 'someone');
+    assert.equal(patched.sound.name, 'Airhorn');
+    assert.equal(patched.sound.license, 'Attribution');
+    assert.equal(patched.sound.url, 'https://freesound.org/s/1234/');
+    assert.match(patched.sound.previewUrl, /^https:\/\/cdn\.freesound\.org\//);
+  });
+
+  it('keeps the credit honest after such a patch', async () => {
+    const store = new BoardStore(tmpData());
+    const board = await store.create({ name: 'b' });
+    const pad = await store.addPad(board.id, { sound: toSound(rawSound()) });
+    await store.updatePad(board.id, pad.id, {
+      sound: { id: 1234, name: 'MINE', username: 'attacker', license: 'Creative Commons 0', url: 'javascript:alert(1)' },
+    });
+    const md = creditsMarkdown(creditsFor(await store.read(board.id)));
+    assert.match(md, /by someone/);
+    assert.ok(!md.includes('attacker'), 'no client-authored author reaches a credit');
+    assert.ok(!md.includes('javascript:'), 'no script URL reaches a credit link');
+  });
+});
+
+describe('the per-board lock map does not grow without bound', () => {
+  it('drops its entry once a board has no work queued', async () => {
+    // pm2 keeps this process alive for weeks, and in the documented open mode
+    // these ids arrive from unauthenticated requests — including ids that are
+    // not boards at all.
+    const store = new BoardStore(tmpData());
+    const board = await store.create({ name: 'b' });
+    for (let i = 0; i < 50; i++) await store.read(board.id).catch(() => {});
+    for (let i = 0; i < 50; i++) await store.read(`bffffffffff${i % 10}`).catch(() => {});
+    await new Promise((r) => setImmediate(r));
+    assert.equal(store.pendingLocks, 0, 'every settled lock is released');
+  });
+});
+
+describe('clientIp cannot be spoofed through X-Forwarded-For', () => {
+  const req = (headers) => ({ headers, socket: { remoteAddress: '127.0.0.1' } });
+
+  it('prefers X-Real-IP, which nginx sets rather than appends', () => {
+    assert.equal(clientIp(req({ 'x-real-ip': '9.9.9.9', 'x-forwarded-for': '1.2.3.4, 9.9.9.9' })), '9.9.9.9');
+  });
+
+  it('takes the LAST forwarded-for hop, which is the one nginx appended', () => {
+    // provision-site writes $proxy_add_x_forwarded_for, which is
+    // "$http_x_forwarded_for, $remote_addr" — it appends to whatever the client
+    // sent. Reading the first entry read an attacker-chosen value, and a fresh
+    // one per request defeated the rate limiter entirely.
+    assert.equal(clientIp(req({ 'x-forwarded-for': '1.2.3.4, 9.9.9.9' })), '9.9.9.9');
+    assert.equal(clientIp(req({ 'x-forwarded-for': 'evil, 203.0.113.7' })), '203.0.113.7');
+  });
+
+  it('falls back to the socket when no proxy header is present', () => {
+    assert.equal(clientIp(req({})), '127.0.0.1');
+    assert.equal(clientIp(req({ 'x-forwarded-for': '  ,  ' })), '127.0.0.1');
   });
 });

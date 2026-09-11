@@ -122,6 +122,21 @@ for protection that is quietly not working.
   install" is a 503 and is the single most useful thing a fresh install can say.
   Anything else is masked and logged. Get this backwards and setup failures
   become "Something went wrong on the server".
+- **A pad's `sound` block is write-once.** `normalisePad` takes it from the
+  caller only when creating a pad, where server.mjs has just fetched it from
+  Freesound; on update the stored one is kept and any `sound` in the patch is
+  ignored. It reads `input.sound ?? existing?.sound` in the first version, which
+  let any client PATCH a pad and author its own attribution — and put a
+  `javascript:` URL into the credit link that the exported Markdown and the
+  rendered page both turn into an anchor. Two tests hold that line.
+- **Rate limiting keys on the LAST `X-Forwarded-For` hop, not the first.**
+  `provision-site` writes `$proxy_add_x_forwarded_for`, which *appends* to
+  whatever the client sent, so the first entry is attacker-chosen and a fresh
+  one per request defeated the limiter completely. `X-Real-IP` is preferred
+  because nginx sets it outright.
+- **The board token is a header only.** Never a query parameter: that is the
+  same rule `lib/freesound.mjs` states for the Freesound key, and a URL is
+  logged by every hop it passes.
 - **Licence versions are never inferred.** Freesound returns `"Attribution"` for
   both CC BY 3.0 and 4.0 clips, so `licenseInfo()` classifies the *obligation*
   (attribution required? commercial use allowed?) and leaves the version to the
