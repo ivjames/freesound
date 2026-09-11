@@ -69,19 +69,22 @@ Full runbook, including first-time bring-up and `.env` keys: `DEPLOY.md`.
 
 ## How it is put together
 
-Zero dependencies, no build step, no framework, no database. `npm ci` installs
-nothing; it exists so `deploy` validates the lockfile. That is a deliberate
-choice rather than minimalism for its own sake: this box rebuilds
-`node_modules` on every deploy, and a native module here would have to be
-rebuilt against the droplet's Node ABI (MODULE_VERSION 127) at every bump.
+**One dependency** (`@anthropic-ai/sdk`, used only for title translation), no
+build step, no framework, no database. It was zero until translation landed,
+and the bar for a second one is high: this box rebuilds `node_modules` on every
+deploy, and anything with a native component has to be rebuilt against the
+droplet's Node ABI (MODULE_VERSION 127) at every bump. The Anthropic SDK is
+pure JS, so it does not carry that cost.
 
 ```
 server.mjs        HTTP, routing, the trust model
 lib/env.mjs       .env, re-read on mtime change (no restart needed for a new key)
-lib/freesound.mjs apiv2 client: search, sound lookup, licence classification
+lib/freesound.mjs apiv2 client: search, sound lookup, similarity, licences
 lib/store.mjs     boards as one JSON file each, atomic writes, per-board locking
 lib/cache.mjs     on-disk mp3 preview cache
 lib/credits.mjs   attribution rendering — md / txt / html / json
+lib/translate.mjs clip titles into English, batched and cached
+lib/dedupe.mjs    near-duplicate grouping and similarity clustering
 lib/http.mjs      response helpers, static serving, ranges, rate limiting
 public/           the page: three ES modules, one stylesheet
 ```
@@ -128,10 +131,78 @@ for protection that is quietly not working.
   result's preview is still on Freesound's CDN, which makes no promise about
   CORS headers — `fetch` + `decodeAudioData` would be a gamble, an `<audio>`
   element is not.
+- **`[hidden] { display: none !important }` is load-bearing.** The attribute is
+  only a UA-stylesheet `display: none`, so any rule of ours beats it —
+  `.search-opts label { display: flex }` silently un-hid a control that JS had
+  hidden. Found in a browser, not by reading.
+
+## Translation
+
+Clip titles are translated into English for display, because Freesound is
+international and you cannot pick a clip off a list you cannot read.
+
+**The rule that shapes the whole feature: a credit always uses Freesound's
+original title, verbatim.** CC BY means identifying the work as its author
+named it, so a board that credits "Door Creak" for a clip called "crujido de
+puerta" is not a correct attribution. A pad therefore stores both —
+`sound.name` (original, what `lib/credits.mjs` renders) and `sound.nameEn`
+(translation, what the board renders) — and nothing in `credits.mjs` may ever
+read `nameEn`. There is a test asserting exactly that; if you change the credit
+renderer, keep it.
+
+- **Claude Haiku 4.5** by default (`FREESOUND_TRANSLATE_MODEL` overrides). Not
+  general machine translation, because these are not sentences: they are
+  filenames, shorthand and fragments, and MT both mangles those and cheerfully
+  "translates" strings that are already English. The model is told to leave
+  English alone and to say when it did nothing.
+- **Batched per search page**, one call for up to 40 titles, and **cached
+  forever** in `data/translations.json` keyed by sound id — a clip's title never
+  changes. So a page costs about a quarter of a cent once, and nothing
+  thereafter.
+- **`nameEn` is only set when it differs from the original**, so a board never
+  renders the same name twice.
+- **Every failure path returns the original names.** No key, a rate limit, an
+  unparseable response: `translate()` returns what it has and never throws. A
+  search must not break because a second API is having a bad day.
+- The model echoes back the id it was given, so ids it was not asked about are
+  discarded rather than cached.
+
+## Deduplication
+
+Three different things get called "duplicate"; they are handled differently on
+purpose, and only the first blocks anything.
+
+1. **Exact** — the same Freesound sound already on this board. `store.addPad`
+   refuses it with a 409 naming the pad it collided with, and the UI offers
+   "show me" and "add anyway". `allowDuplicate: true` is the escape, because
+   the same clip on two keys at different gains is a real thing to want.
+2. **Near** — one pack's twenty takes of the same footstep flooding a results
+   page. `lib/dedupe.mjs` folds them behind a disclosure, grouped by name stem
+   **plus** pack or uploader. The "plus" is load-bearing: four people's takes
+   on "rain" are four real choices, and collapsing them would hide the choice
+   search exists to offer. Grouping runs on the *translated* name, because that
+   is what the user reads.
+3. **Acoustic** — "do I already have something like this?", which no string
+   comparison answers. Freesound's own `/sounds/<id>/similar/` does. Costs one
+   request per clip checked, so it runs on add (a warning, never a refusal) and
+   on an explicit board scan capped at 24 pads. Similarity is **neither
+   symmetric nor transitive** — B can be in A's list while A is absent from B's
+   — so clustering is an undirected graph walk. Treating it as transitive would
+   eventually merge the whole board into one cluster, which is what makes these
+   tools useless.
 
 ## Tests
 
-`npm test` — `node --test`, no runner to install. `test/lib.test.mjs` covers the
-units; `test/integration.test.mjs` stubs `fetch` and drives the real modules
-along the path that matters (API response shape → pad → cached mp3 → credit), so
-a change to how the API response is read fails here rather than on the droplet.
+`npm test` — `node --test`, no runner to install.
+
+- `test/lib.test.mjs` — units, plus the exact-duplicate rule.
+- `test/integration.test.mjs` — stubs `fetch` and drives the real modules along
+  the path that matters (API response shape → pad → cached mp3 → credit), so a
+  change to how the API response is read fails here rather than on the droplet.
+- `test/translate.test.mjs` — stubs the Anthropic SDK's transport. The assertions
+  that matter are not "does it translate": they are that the original name
+  survives, that a failure degrades instead of throwing, that a translation is
+  bought once, and that **no translation reaches a credit**.
+- `test/dedupe.test.mjs` — the grouping rules, including the two that are easy
+  to get wrong: different uploaders' clips of the same word must NOT merge, and
+  similarity must be treated as undirected.

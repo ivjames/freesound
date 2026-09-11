@@ -25,6 +25,11 @@
   <section id="board" class="board" aria-label="Sound pads">
     <p class="empty" id="board-empty">No board yet. Make one, then add sounds to it.</p>
     <div id="pads" class="pads"></div>
+    <div class="board-tools">
+      <button id="scan-similar" class="ghost" type="button" hidden
+              title="Ask Freesound which clips on this board sound alike. One request per pad.">Find similar clips</button>
+      <div id="scan-result"></div>
+    </div>
   </section>
 
   <aside id="search" class="panel" hidden aria-label="Search Freesound">
@@ -35,8 +40,11 @@
     <div class="search-opts">
       <label><input type="checkbox" id="commercial-only"> Commercial-safe only <span class="hint">(exclude NonCommercial)</span></label>
       <label>Max length <input type="number" id="max-duration" min="1" max="300" value="15" size="3"> s</label>
+      <label id="originals-label" hidden><input type="checkbox" id="show-originals"> Show original titles
+        <span class="hint">(untranslated, as uploaded — this is what the credits always use)</span></label>
     </div>
-    <p class="hint" id="search-status">Results play on click. <strong>Add</strong> copies the clip and its credit onto the current board.</p>
+    <p class="hint" id="search-status">Results play on click. <strong>Add</strong> copies the clip and its credit onto the current board.
+      Non-English titles are translated for display; near-identical takes from one pack are folded into a single row.</p>
     <ol id="results" class="results"></ol>
     <button id="more" class="ghost wide" type="button" hidden>Load more</button>
   </aside>
@@ -59,6 +67,8 @@
 <footer class="foot">
   <p>Sounds from <a href="https://freesound.org" rel="noopener">freesound.org</a>, used under the licence each uploader
      chose. This site stores a cached mp3 preview and the clip's credit; it does not redistribute originals.</p>
+  <p>Titles may be translated into English for display. Every credit uses the uploader's original title, because that is
+     what attribution means.</p>
   <p id="health" class="hint"></p>
 </footer>
 

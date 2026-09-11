@@ -70,6 +70,8 @@ dump — nothing replays it at boot without the hook.
 | `PORT` | `8074` — must match the vhost's `proxy_pass` |
 | `FREESOUND_API_KEY` | Freesound apiv2 key, from <https://freesound.org/apiv2/apply> (the "Client secret/Api key" column). Token auth only — this app never needs OAuth2, because it reads search results and mp3 previews and never downloads originals. Missing: the site still serves and plays boards, and `/api/search` answers 503 saying so. |
 | `FREESOUND_WRITE_TOKEN` | Shared secret for the routes that spend the API key or change a board. `freesound token` generates it. **Empty means the site is fully open**, including to anyone who finds the URL, and this vhost is public and unauthenticated. |
+| `ANTHROPIC_API_KEY` | Optional. Used **only** to translate clip titles into English for display, so a foreign-language results page is readable. Missing: titles show exactly as uploaded and nothing else changes. Credits always use the uploader's original title whether or not this is set. |
+| `FREESOUND_TRANSLATE_MODEL` | Optional, default `claude-haiku-4-5`. A page of 30 titles is roughly a quarter of a cent, and each clip is translated **once ever** — the result is cached in `data/translations.json`, keyed by sound id, because a clip's title never changes. |
 | `FREESOUND_CACHE_MB` | Optional, default `512`. Ceiling for the on-disk preview cache under `data/audio/`. Audio a board still references is never swept, whatever the ceiling says. |
 
 `freesound keys` lists which of these are set — names only, never values.
@@ -152,6 +154,9 @@ Both are gitignored and survive `deploy`'s hard reset:
   and `deploy` copies nothing in from anywhere.
 - `data/boards/<id>.json` — one file per board, written atomically. This is the
   real data: back this up.
+- `data/translations.json` — English titles, keyed by Freesound sound id.
+  Derived and cheap to rebuild, but worth keeping: losing it means re-buying
+  every translation the next time those clips are searched.
 - `data/audio/<soundId>.mp3` — cached Freesound previews. Derived, not data:
   deleting the directory costs nothing but a re-fetch of whatever is still on a
   board. Note that a board whose audio has been deleted cannot re-fetch it
@@ -162,3 +167,14 @@ A board is a small JSON document, so a backup is just:
 ```bash
 tar czf /root/freesound-boards-$(date +%F).tgz -C /var/www/freesound data/boards
 ```
+
+## Cost, in the two places this site spends money
+
+- **Freesound** is free but metered per key. Search and pad-adding spend it;
+  playing a board does not, because the audio is cached here. The write token
+  is what stops an anonymous visitor spending your quota.
+- **Anthropic** is spent only on translating titles, only for clips never seen
+  before, at roughly a quarter of a cent per page of 30 on the default model.
+  `/api/health` reports `translation.cached`, which is how many clips have
+  already been paid for. Unset `ANTHROPIC_API_KEY` to switch the feature off
+  entirely; nothing else changes.

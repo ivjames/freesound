@@ -65,14 +65,19 @@ export const api = {
   reorderBoard: (id, order) => request('PATCH', `/api/boards/${id}`, { order }),
   deleteBoard: (id) => request('DELETE', `/api/boards/${id}`),
 
+  // Resolves to {pad, warnings} — warnings carry the acoustic-similarity hits,
+  // which inform rather than block.
   addPad: (boardId, pad) => request('POST', `/api/boards/${boardId}/pads`, pad),
+  similarScan: (boardId) => request('GET', `/api/boards/${boardId}/similar-scan`),
   updatePad: (boardId, padId, patch) => request('PATCH', `/api/boards/${boardId}/pads/${padId}`, patch),
   deletePad: (boardId, padId) => request('DELETE', `/api/boards/${boardId}/pads/${padId}`),
 
-  search({ q, page = 1, commercial = false, maxDuration = 0, sort = 'score' }) {
+  search({ q, page = 1, commercial = false, maxDuration = 0, sort = 'score', translate = true, group = true }) {
     const params = new URLSearchParams({ q, page: String(page), sort });
     if (commercial) params.set('commercial', '1');
     if (maxDuration > 0) params.set('maxDuration', String(maxDuration));
+    if (!translate) params.set('translate', '0');
+    if (!group) params.set('group', '0');
     return request('GET', `/api/search?${params}`);
   },
 

@@ -16,6 +16,11 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute is only a UA-stylesheet `display: none`, so ANY
+   display rule of ours beats it — `.search-opts label { display: flex }` was
+   silently showing a control that JS had hidden. Make the attribute win. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -225,3 +230,60 @@ dialog::backdrop { background: #000a; }
 dialog h2 { margin-top: 0; font-size: .9rem; text-transform: uppercase; color: var(--dim); }
 dialog input { width: 100%; margin: .75rem 0; }
 dialog menu { display: flex; gap: .5rem; justify-content: flex-end; margin: 0; padding: 0; }
+
+/* --- translated titles, dedup, similarity scan ------------------------------ */
+
+.pad-original,
+.result-original,
+.variant-name {
+  color: var(--dim);
+  font-size: .72rem;
+  overflow-wrap: anywhere;
+}
+/* The original sits under the translated label, quieter than it but never
+   hidden: it is the name the credits will carry. */
+.pad-original { margin-top: -.15rem; font-style: italic; }
+.result-original { display: block; font-style: italic; margin-top: .1rem; }
+
+@keyframes pad-flash {
+  0%, 100% { box-shadow: none; }
+  25%, 75% { box-shadow: 0 0 0 2px var(--accent); }
+}
+.pad.flash { animation: pad-flash 1.6s ease; }
+
+.banner-action {
+  margin-left: .6rem;
+  padding: .1rem .5rem;
+  font-size: .78rem;
+  background: transparent;
+  border-color: currentColor;
+  color: inherit;
+}
+
+.variants { margin-top: .35rem; grid-column: 1 / -1; }
+.variants summary { color: var(--dim); font-size: .76rem; cursor: pointer; }
+.variants summary:hover { color: var(--ink); }
+.variants ul { list-style: none; margin: .4rem 0 0; padding: 0 0 0 .75rem; border-left: 1px solid var(--edge); }
+.variants li {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: .2rem 0;
+}
+.variants .variant-name { font-size: .78rem; color: var(--ink); }
+
+.board-tools { margin-top: 1.25rem; }
+#scan-result { margin-top: .6rem; }
+.scan-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  padding: .45rem .6rem;
+  margin-bottom: .4rem;
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.scan-hit { padding: .15rem .45rem; font-size: .76rem; background: transparent; }
